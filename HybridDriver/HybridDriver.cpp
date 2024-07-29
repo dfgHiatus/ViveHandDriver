@@ -133,7 +133,7 @@ static const char * const k_pch_Sample_RenderHeight_Int32 = "renderHeight";
 static const char * const k_pch_Sample_SecondsFromVsyncToPhotons_Float = "secondsFromVsyncToPhotons";
 static const char * const k_pch_Sample_DisplayFrequency_Float = "displayFrequency";
 
-enum class TrackerType { Undefined = -1, LeftHand = 0, RightHand, LeftFoot, RightFoot, Waist, TrackersCount };
+enum class TrackerType { Undefined = -1, LeftHand = 0, RightHand, TrackersCount };
 
 //-----------------------------------------------------------------------------
 // Purpose:
@@ -238,48 +238,11 @@ public:
 			pchResponseBuffer[0] = 0;
 	}
 
-	bool CalibrateJointPositions()
-	{
-		float kinectHeadPos[3] = { 0 };
-		bool isDataAvailable;
-
-		kinectHeadPos[0] = g_SharedBuf->bodyMsg.HeadPos.X;
-		kinectHeadPos[1] = g_SharedBuf->bodyMsg.HeadPos.Y;
-		kinectHeadPos[2] = g_SharedBuf->bodyMsg.HeadPos.Z;
-
-		TrackedDevicePose_t hmd_tracker;
-		VRServerDriverHost()->GetRawTrackedDevicePoses(0, &hmd_tracker, 1);
-
-		// Get vec3 from matrix34
-		vr::HmdVector3_t hmdPos;
-		hmdPos.v[0] = hmd_tracker.mDeviceToAbsoluteTracking.m[0][3];
-		hmdPos.v[1] = hmd_tracker.mDeviceToAbsoluteTracking.m[1][3];
-		hmdPos.v[2] = hmd_tracker.mDeviceToAbsoluteTracking.m[2][3];
-
-		// if either of kinect/lighthouse is not synced, just bail out
-		if ((hmdPos.v[0] == 0.0 && hmdPos.v[1] == 0.0 && hmdPos.v[2] == 0.0) || (kinectHeadPos[0] == 0.0 && kinectHeadPos[1] == 0.0 && kinectHeadPos[2] == 0.0))
-			return false;
-
-	/*	DriverLog("Calibration data:\n"\
-			"\tLighthouse position: (%f, %f, %f)\n"\
-			"\tKinect position: (%f, %f, %f)",
-			hmdPos.v[0], hmdPos.v[1], hmdPos.v[2],
-			kinectHeadPos[0], kinectHeadPos[1], kinectHeadPos[2]);*/
-
-		for (int i = 0; i < 3; i++)
-			m_calibrationPos[i] = hmdPos.v[i] - kinectHeadPos[i];
-
-		//DriverLog("Computed calibration vector: (%f, %f, %f)", m_calibrationPos[0], m_calibrationPos[1], m_calibrationPos[2]);
-
-		m_calibrationDone = true;
-		return m_calibrationDone;
-	}
-
 	DriverPose_t GetHandPose() {
 		DriverPose_t pose = { 0 };
 		HandEventMsg_t* msg = &g_SharedBuf->handMsg;
 
-		if (msg->state != (int)HandTrackingState::Initialized) //TODO: Also check if we can see the hand we are looking for
+		if (msg->state != (int)HandTrackingState::Initialized) // TODO: Also check if we can see the hand we are looking for
 		{
 			pose.poseIsValid = false;
 			pose.result = TrackingResult_Calibrating_InProgress;
@@ -297,9 +260,9 @@ public:
 		VRServerDriverHost()->GetRawTrackedDevicePoses(0, &hmd_tracker, 1);
 
 		vr::HmdVector3d_t handPos;
-		handPos.v[0] = m_type == TrackerType::LeftHand ? msg->LeftHandPos.X : msg->RightHandPos.X;
-		handPos.v[1] = m_type == TrackerType::LeftHand ? msg->LeftHandPos.Y : msg->RightHandPos.Y;
-		handPos.v[2] = -(m_type == TrackerType::LeftHand ? msg->LeftHandPos.Z : msg->RightHandPos.Z);
+		handPos.v[0] = m_type == TrackerType::LeftHand ? msg->leftHandGestureResult.position.x : msg->rightHandGestureResult.position.x;
+		handPos.v[1] = m_type == TrackerType::LeftHand ? msg->leftHandGestureResult.position.y : msg->rightHandGestureResult.position.y;
+		handPos.v[2] = -(m_type == TrackerType::LeftHand ? msg->leftHandGestureResult.position.z : msg->rightHandGestureResult.position.z);
 		HmdQuaternion_t hmdQuaternion = GetHMDRotation(hmd_tracker.mDeviceToAbsoluteTracking);
 		handPos = MultiplyByQuaternion(hmdQuaternion, handPos);
 
@@ -314,6 +277,21 @@ public:
 		pose.vecPosition[2] = hmdPos.v[2] + static_cast<double>(handPos.v[2]);
 
 		pose.qRotation = hmdQuaternion;
+		//if (m_type == TrackerType::LeftHand)
+		//{
+		//	pose.qRotation.x = msg->leftHandGestureResult.rotations[0].x;
+		//	pose.qRotation.y = msg->leftHandGestureResult.rotations[0].y;
+		//	pose.qRotation.z = msg->leftHandGestureResult.rotations[0].z;
+		//	pose.qRotation.w = msg->leftHandGestureResult.rotations[0].w;
+		//}
+		//else
+		//{
+		//	pose.qRotation.x = msg->rightHandGestureResult.rotations[0].x;
+		//	pose.qRotation.y = msg->rightHandGestureResult.rotations[0].y;
+		//	pose.qRotation.z = msg->rightHandGestureResult.rotations[0].z;
+		//	pose.qRotation.w = msg->rightHandGestureResult.rotations[0].w;
+		//}
+
 		return pose;
 
 	}
@@ -333,16 +311,7 @@ public:
 				DriverPose_t handPose = GetHandPose();
 				if (handPose.poseIsValid)
 						return handPose;
-			}
-			
-		}
-
-		//if (!m_calibrationDone && !CalibrateJointPositions())
-		if (!CalibrateJointPositions())
-		{
-			pose.poseIsValid = false;
-			pose.result = TrackingResult_Calibrating_InProgress;
-			return pose;
+			}		
 		}
 
 		pose.poseIsValid = true;
@@ -352,40 +321,27 @@ public:
 		pose.qWorldFromDriverRotation = HmdQuaternion_Init(1, 0, 0, 0);
 		pose.qDriverFromHeadRotation = HmdQuaternion_Init(1, 0, 0, 0);
 
-		// Retrieve actual joint positions from Kinect
-		BodyEventMsg_t* msg = &g_SharedBuf->bodyMsg;
-
 		// Estimate joint positions in lighthouse coordinates
 		switch (m_type) {
-		case TrackerType::LeftFoot:
-			pose.vecPosition[0] = static_cast<double>(msg->FootLeftPos.X) + m_calibrationPos[0];
-			pose.vecPosition[1] = static_cast<double>(msg->FootLeftPos.Y) + m_calibrationPos[1];
-			pose.vecPosition[2] = static_cast<double>(msg->FootLeftPos.Z) + m_calibrationPos[2];
-			//memcpy(&pose.qRotation, &msg->FootLeftRot, sizeof(HmdQuaternion_t));
-			break;
-		case TrackerType::RightFoot:
-			pose.vecPosition[0] = static_cast<double>(msg->FootRightPos.X) + m_calibrationPos[0];
-			pose.vecPosition[1] = static_cast<double>(msg->FootRightPos.Y) + m_calibrationPos[1];
-			pose.vecPosition[2] = static_cast<double>(msg->FootRightPos.Z) + m_calibrationPos[2];
-			//memcpy(&pose.qRotation, &msg->FootRightRot, sizeof(HmdQuaternion_t));
-			break;
 		case TrackerType::LeftHand:
-			pose.vecPosition[0] = static_cast<double>(msg->HandLeftPos.X) + m_calibrationPos[0];
-			pose.vecPosition[1] = static_cast<double>(msg->HandLeftPos.Y) + m_calibrationPos[1];
-			pose.vecPosition[2] = static_cast<double>(msg->HandLeftPos.Z) + m_calibrationPos[2];
+			pose.vecPosition[0] = static_cast<double>(handMsg->leftHandGestureResult.position.x);
+			pose.vecPosition[1] = static_cast<double>(handMsg->leftHandGestureResult.position.y);
+			pose.vecPosition[2] = static_cast<double>(handMsg->leftHandGestureResult.position.z);
+			// pose.qRotation.x = handMsg->leftHandGestureResult.rotations[0].x;
+			// pose.qRotation.y = handMsg->leftHandGestureResult.rotations[0].y;
+			// pose.qRotation.z = handMsg->leftHandGestureResult.rotations[0].z;
+			// pose.qRotation.w = handMsg->leftHandGestureResult.rotations[0].w;
 			//memcpy(&pose.qRotation, &msg->HandLeftRot, sizeof(HmdQuaternion_t));
 			break;
 		case TrackerType::RightHand:
-			pose.vecPosition[0] = static_cast<double>(msg->HandRightPos.X) + m_calibrationPos[0];
-			pose.vecPosition[1] = static_cast<double>(msg->HandRightPos.Y) + m_calibrationPos[1];
-			pose.vecPosition[2] = static_cast<double>(msg->HandRightPos.Z) + m_calibrationPos[2];
+			pose.vecPosition[0] = static_cast<double>(handMsg->rightHandGestureResult.position.x);
+			pose.vecPosition[1] = static_cast<double>(handMsg->rightHandGestureResult.position.y);
+			pose.vecPosition[2] = static_cast<double>(handMsg->rightHandGestureResult.position.z);
+			// pose.qRotation.x = handMsg->rightHandGestureResult.rotations[0].x;
+			// pose.qRotation.y = handMsg->rightHandGestureResult.rotations[0].y;
+			// pose.qRotation.z = handMsg->rightHandGestureResult.rotations[0].z;
+			// pose.qRotation.w = handMsg->rightHandGestureResult.rotations[0].w;
 			//memcpy(&pose.qRotation, &msg->HandRightRot, sizeof(HmdQuaternion_t));
-			break;
-		case TrackerType::Waist:
-			pose.vecPosition[0] = static_cast<double>(msg->WaistPos.X) + m_calibrationPos[0];
-			pose.vecPosition[1] = static_cast<double>(msg->WaistPos.Y) + m_calibrationPos[1];
-			pose.vecPosition[2] = static_cast<double>(msg->WaistPos.Z) + m_calibrationPos[2];
-			//memcpy(&pose.qRotation, &msg->WaistRot, sizeof(HmdQuaternion_t));
 			break;
 		default:
 			pose.poseIsValid = false;
@@ -440,9 +396,9 @@ public:
 			if (msg->state == (int)HandTrackingState::Initialized)
 			{
 				if (m_type == TrackerType::LeftHand) {
-					vr::VRDriverInput()->UpdateBooleanComponent(m_compA, msg->leftHandGesture == GestureTypeOK, 0);
-					vr::VRDriverInput()->UpdateBooleanComponent(m_compB, msg->leftHandGesture == GestureTypeVictory, 0);
-					vr::VRDriverInput()->UpdateBooleanComponent(m_compC, msg->leftHandGesture == GestureTypeFist, 0);
+					vr::VRDriverInput()->UpdateBooleanComponent(m_compA, msg->leftHandGestureResult.gesture == GestureTypeOK, 0);
+					vr::VRDriverInput()->UpdateBooleanComponent(m_compB, msg->leftHandGestureResult.gesture == GestureTypeVictory, 0);
+					vr::VRDriverInput()->UpdateBooleanComponent(m_compC, msg->leftHandGestureResult.gesture == GestureTypeFist, 0);
 					vr::EVRInputError err = vr::VRDriverInput()->UpdateSkeletonComponent(m_leftHandHandler, vr::VRSkeletalMotionRange_WithController, msg->bonesLeftHand, 31);
 					if (err != vr::VRInputError_None)
 					{
@@ -457,9 +413,9 @@ public:
 					}
 				}
 				else if (m_type == TrackerType::RightHand) {
-					vr::VRDriverInput()->UpdateBooleanComponent(m_compA, msg->rightHandGesture == GestureTypeOK, 0);
-					vr::VRDriverInput()->UpdateBooleanComponent(m_compB, msg->rightHandGesture == GestureTypeVictory, 0);
-					vr::VRDriverInput()->UpdateBooleanComponent(m_compC, msg->rightHandGesture == GestureTypeFist, 0);
+					vr::VRDriverInput()->UpdateBooleanComponent(m_compA, msg->rightHandGestureResult.gesture == GestureTypeOK, 0);
+					vr::VRDriverInput()->UpdateBooleanComponent(m_compB, msg->rightHandGestureResult.gesture == GestureTypeVictory, 0);
+					vr::VRDriverInput()->UpdateBooleanComponent(m_compC, msg->rightHandGestureResult.gesture == GestureTypeFist, 0);
 					vr::EVRInputError err = vr::VRDriverInput()->UpdateSkeletonComponent(m_rightHandHandler, vr::VRSkeletalMotionRange_WithController, msg->bonesRightHand, 31);
 					if (err != vr::VRInputError_None)
 					{

@@ -80,7 +80,7 @@ private:
     std::thread* m_gestureRecognition;
 
     bool m_isDataAvailable;
-    GestureResult* m_handtrackingPoints;
+    GestureResult* m_gestureResult;
 
     bool m_stop;
 

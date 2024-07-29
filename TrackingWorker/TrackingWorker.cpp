@@ -9,7 +9,6 @@
 #include <openvr.h>
 
 #include "HandTracking.h"
-#include "BodyTracking.h"
 
 using namespace vr;
 
@@ -49,13 +48,8 @@ int main()
     }
 
     CHandTracking handTracking;
-    CBodyTracking bodyTracking;
-    
-    bodyTracking.SetEventMsgBuffer(&g_SharedBuf->bodyMsg);
     handTracking.SetEventMsgBuffer(&g_SharedBuf->handMsg);
-
     handTracking.InitializeDefaultSensor();
-    bodyTracking.InitializeDefaultSensor();
 
     while (true) Sleep(1000);
 }

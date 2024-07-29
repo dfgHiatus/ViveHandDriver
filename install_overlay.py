@@ -3,7 +3,7 @@ import sys
 import os
 
 EXE_PATH = "./x64/Release/TrackingWorker.exe"
-CONFIG_DIR = "C:\\Program Files (x86)\\Steam\\config\\"
+CONFIG_DIR = "G:\\Steam\\config\\"
 
 if len(sys.argv) > 1:
 	if sys.argv[1] == '-h':

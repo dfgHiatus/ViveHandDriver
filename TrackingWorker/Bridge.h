@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Kinect.h>
 #include <openvr.h>
 #include <interface_gesture.hpp>
 
@@ -16,37 +15,15 @@ struct Quaternion_t
 };
 
 typedef struct {
-	Point3D_t WaistPos;
-	Quaternion_t WaistRot;
-	Point3D_t FootLeftPos;
-	Quaternion_t FootLeftRot;
-	Point3D_t FootRightPos;
-	Quaternion_t FootRightRot;
-	Point3D_t HandLeftPos;
-	Quaternion_t HandLeftRot;
-	Point3D_t HandRightPos;
-	Quaternion_t HandRightRot;
-
-	Point3D_t HeadPos;
-	Quaternion_t HeadRot;
-
-	HandState HandLeftState;
-	HandState HandRightState;
-} BodyEventMsg_t;
-
-typedef struct {
-	vr::VRBoneTransform_t bonesLeftHand[31];
-	Point3D_t LeftHandPos;
-	vr::VRBoneTransform_t bonesRightHand[31];
-	Point3D_t RightHandPos;
 	uint32_t state;
-	GestureType leftHandGesture;
-	GestureType rightHandGesture;
+	vr::VRBoneTransform_t bonesLeftHand[31];
+	vr::VRBoneTransform_t bonesRightHand[31];
+	GestureResult leftHandGestureResult;
+	GestureResult rightHandGestureResult;
 	bool leftHandDetected;
 	bool rightHandDetected;
 } HandEventMsg_t;
 
 typedef struct {
 	HandEventMsg_t handMsg;
-	BodyEventMsg_t bodyMsg;
 } GlobalEventMsg_t;
